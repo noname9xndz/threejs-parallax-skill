@@ -1,11 +1,15 @@
 ---
 name: threejs-parallax
-description: Creates a 2.5D parallax effect using Three.js with layered transparent PNG assets on PlaneGeometry. Use when adding parallax scenes, layered product imagery, interactive media placeholders, or when the user mentions "parallax", "2.5D", "depth effect", or "layered images" in a project card or media container.
+description: Creates a 2.5D parallax effect using Three.js with layered transparent PNG assets on PlaneGeometry — pointer/touch/gyro-driven, scroll-driven, or camera-follow (web game backgrounds with infinite tiling). Use when adding parallax scenes, layered product imagery, interactive media placeholders, side-scroller backgrounds, or when the user mentions "parallax", "2.5D", "depth effect", or "layered images".
 ---
 
 # Three.js 2.5D Parallax Effect
 
-Renders stacked transparent PNGs on separate Three.js planes with mouse-driven parallax and scroll-driven layer motion. Background layers move least, foreground most. Layers can also drift on scroll (left/right/up) for added dynamism.
+Renders stacked transparent PNGs on separate Three.js planes with pointer-driven parallax and scroll-driven layer motion. Background layers move least, foreground most. Layers can also drift on scroll (left/right/up) for added dynamism.
+
+Two modes:
+- **Media mode** (all sections up to "Cleanup"): a card/hero image reacting to pointer + scroll.
+- **Game mode** (see "Camera-Follow Mode for Web Games"): side-scroller backgrounds that follow a moving camera and tile infinitely.
 
 ## Quick Start
 
@@ -17,8 +21,10 @@ Renders stacked transparent PNGs on separate Three.js planes with mouse-driven p
 
 ```html
 <script type="module">
-import * as THREE from 'https://esm.sh/three@0.162.0';
+import * as THREE from 'https://esm.sh/three@0.170.0';
 ```
+
+Always pin an exact version. In a bundler project use `import * as THREE from 'three'` instead.
 
 ## Scene Setup
 
@@ -47,6 +53,13 @@ const loadTex = src => new Promise((res, rej) => loader.load(src, tex => {
 ```
 
 **Critical**: Set `tex.colorSpace = THREE.SRGBColorSpace` on every texture to prevent gamma double-correction. Without both this AND `renderer.outputColorSpace`, colours will not match the original assets.
+
+The loaded texture already knows its pixel size, so the aspect ratio can be computed instead of measured by hand:
+
+```javascript
+const aspectOf = tex => tex.image.width / tex.image.height;
+// makeLayer(tex, SIZE, SIZE / aspectOf(tex), [X, Y, Z], FACTOR, ORDER)
+```
 
 ## Layer Factory
 
@@ -151,16 +164,31 @@ tayaLayer.userData.scrollFX   =  0.55; tayaLayer.userData.scrollFY   =  0.00;  /
 walletLayer.userData.scrollFX =  0.00; walletLayer.userData.scrollFY =  0.36;  // floats up
 ```
 
-## Mouse Tracking & Parallax Motion
+## Pointer Tracking & Parallax Motion
+
+Use `pointermove` (mouse, pen and touch) rather than `mousemove`, so the effect also works on tablets and phones.
 
 ```javascript
 let tX = 0, tY = 0, cX = 0, cY = 0;
 
-document.addEventListener('mousemove', e => {
+const onPointerMove = e => {
   tX =  (e.clientX / window.innerWidth  - 0.5) * 2;
   tY = -(e.clientY / window.innerHeight - 0.5) * 2;
-});
+};
+window.addEventListener('pointermove', onPointerMove, { passive: true });
+```
 
+Optional — tilt on phones (iOS requires a user gesture and `DeviceOrientationEvent.requestPermission()` before events arrive):
+
+```javascript
+window.addEventListener('deviceorientation', e => {
+  if (e.gamma == null) return;
+  tX = THREE.MathUtils.clamp(e.gamma / 30, -1, 1);       // left/right tilt
+  tY = THREE.MathUtils.clamp((e.beta - 45) / 30, -1, 1); // forward/back tilt
+}, { passive: true });
+```
+
+```javascript
 function animate() {
   requestAnimationFrame(animate);
 
@@ -189,6 +217,35 @@ animate();
 | `0.065` | Lerp smoothing factor | Lower = more lag/smooth, higher = snappier |
 | `0.035` | Camera Y rotation multiplier | Perspective lean amount (horizontal) |
 | `0.025` | Camera X rotation multiplier | Perspective lean amount (vertical) |
+
+## Performance & Accessibility (required)
+
+The basic loop renders every frame forever, even when the section is off-screen. Always add these:
+
+```javascript
+// 1. Respect reduced-motion: keep the static composition, skip motion
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+
+// 2. Only animate while the container is visible
+let visible = true, rafId = 0;
+const io = new IntersectionObserver(([entry]) => {
+  visible = entry.isIntersecting;
+  if (visible && !rafId) rafId = requestAnimationFrame(animate);
+});
+io.observe(container);
+
+function animate() {
+  if (!visible) { rafId = 0; return; }       // stop the loop off-screen
+  rafId = requestAnimationFrame(animate);
+  if (reduceMotion.matches) { tX = tY = 0; scrollProg = 0; }
+  // ... lerp + layer updates as above ...
+  renderer.render(scene, camera);
+}
+```
+
+- `renderer.setPixelRatio(Math.min(devicePixelRatio, 2))` — never render above 2× on high-DPI phones.
+- Compress large PNGs (or use WebP/KTX2) — layer textures are usually the biggest cost.
+- With many parallax cards on one page, share one renderer or limit to the cards on screen; browsers cap the number of live WebGL contexts (~16).
 
 ## Scroll-Driven Layer Motion
 
@@ -322,15 +379,90 @@ With CSS:
 
 Set `background: transparent` on the media wrapper if the card background should show through the alpha channel.
 
+## Cleanup
+
+When the container is removed (SPA route change, React/Vue unmount), free GPU memory and listeners:
+
+```javascript
+function destroy() {
+  cancelAnimationFrame(rafId);
+  io.disconnect();
+  ro.disconnect();
+  window.removeEventListener('scroll', updateScrollProg);
+  window.removeEventListener('pointermove', onPointerMove);
+  for (const layer of layers) {
+    layer.geometry.dispose();
+    layer.material.map?.dispose();
+    layer.material.dispose();
+  }
+  renderer.dispose();
+  canvas.remove();
+}
+```
+
+## Camera-Follow Mode for Web Games
+
+For side-scrollers the parallax follows the game camera, not the pointer. Rule: `layerOffset = cameraPos × factor` (sky ~0–0.1, far hills ~0.2–0.3, mid ~0.5–0.7, gameplay 1.0, foreground 1.2–1.5).
+
+### Perspective camera (2.5D)
+
+Place planes at different `z`; moving `camera.position.x` gives parallax for free. Scale far planes so they still cover the view:
+
+```javascript
+function coverScale(z, planeH) {
+  const dist = camera.position.z - z;
+  const visH = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * dist;
+  return visH / planeH;
+}
+```
+
+With `depthTest: false`, draw order comes only from `renderOrder` — keep it consistent with `z`.
+
+### Orthographic camera (pure 2D)
+
+No natural parallax, so offset each layer every frame:
+
+```javascript
+for (const L of layers) {
+  L.mesh.position.x = camera.position.x * (1 - L.factor);
+  L.mesh.position.y = camera.position.y * (1 - L.factorY); // factorY < factor
+}
+```
+
+### Infinite tiling via texture offset
+
+One screen-sized plane per layer that rides with the camera; only the UVs scroll:
+
+```javascript
+tex.wrapS = THREE.RepeatWrapping;
+// each frame
+L.mesh.position.x = camera.position.x;
+tex.offset.x = (camera.position.x * L.factor) / L.tileWorldWidth;
+```
+
+Assets must be seamlessly tileable horizontally. For autoscroll (clouds, vehicle levels) add `+= speed * dt` to `tex.offset.x`.
+
+### Pixel art
+
+```javascript
+tex.magFilter = THREE.NearestFilter;
+tex.minFilter = THREE.NearestFilter;
+tex.generateMipmaps = false;
+// snap to whole texels to avoid shimmering
+L.mesh.position.x = Math.round(L.mesh.position.x * PPU) / PPU; // PPU = pixels per world unit
+```
+
 ## Checklist for Adding a New Parallax Scene
 
-1. Prepare transparent PNG assets (use `sips -g pixelWidth -g pixelHeight` to get dimensions)
-2. Compute aspect ratio for each: `width / height`
+1. Prepare transparent PNG assets (compressed; tileable if used in game mode)
+2. Compute aspect ratio for each: `width / height` — or use `aspectOf(tex)` at runtime (macOS: `sips -g pixelWidth -g pixelHeight`; Windows PowerShell / Linux: `magick identify file.png`)
 3. Add unique `id` to the container div
 4. Add `<script type="module">` block following the pattern above
 5. Define layers back-to-front with increasing `parallaxFactor` and `renderOrder`
 6. Assign `scrollFX` / `scrollFY` on each layer for scroll-driven drift (set to `0` for no scroll motion)
 7. Add `updateScrollProg()` listener and use `smoothScrollProg` in the animate loop
 8. Set both `renderer.outputColorSpace` and each `tex.colorSpace` to `THREE.SRGBColorSpace`
-9. Test mouse interaction — adjust `parallaxFactor` values and positions as needed
+9. Test pointer interaction (mouse and touch) — adjust `parallaxFactor` values and positions as needed
 10. Test scroll interaction — scroll past the section and verify layers drift subtly in the intended directions
+11. Add the IntersectionObserver pause and `prefers-reduced-motion` check; verify the loop stops when scrolled away (DevTools → Performance)
+12. Wire up `destroy()` if the page can unmount the scene

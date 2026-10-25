@@ -10,6 +10,9 @@ This skill teaches the AI agent how to build interactive parallax scenes where s
 - **Scroll-driven layer motion** — layers drift independently (left/right/up/down) as the section scrolls through the viewport
 - **Smooth interpolation** — all motion is lerped for a polished, fluid feel
 - **Correct color rendering** — includes critical `SRGBColorSpace` settings to prevent washed-out textures
+- **Touch & mobile** — `pointermove` plus optional gyro tilt, so it works beyond desktop mice
+- **Performance & accessibility** — pauses off-screen with `IntersectionObserver`, respects `prefers-reduced-motion`, and cleans up GPU resources on unmount
+- **Camera-follow mode for web games** — side-scroller backgrounds with infinite tiling and pixel-art settings
 
 ## Installation
 
@@ -18,7 +21,7 @@ This skill teaches the AI agent how to build interactive parallax scenes where s
 Copy the `threejs-parallax` folder into your project's `.claude/skills/` directory:
 
 ```bash
-git clone https://github.com/JudyZZ/threejs-parallax-skill.git /tmp/threejs-parallax-skill
+git clone https://github.com/noname9xndz/threejs-parallax-skill.git /tmp/threejs-parallax-skill
 cp -r /tmp/threejs-parallax-skill/threejs-parallax .claude/skills/
 ```
 
@@ -27,7 +30,7 @@ cp -r /tmp/threejs-parallax-skill/threejs-parallax .claude/skills/
 Copy the `threejs-parallax` folder into your project's `.cursor/skills/` directory:
 
 ```bash
-git clone https://github.com/JudyZZ/threejs-parallax-skill.git /tmp/threejs-parallax-skill
+git clone https://github.com/noname9xndz/threejs-parallax-skill.git /tmp/threejs-parallax-skill
 cp -r /tmp/threejs-parallax-skill/threejs-parallax .cursor/skills/
 ```
 
@@ -36,13 +39,13 @@ cp -r /tmp/threejs-parallax-skill/threejs-parallax .cursor/skills/
 Use the Codex skill installer:
 
 ```bash
-codex install-skill --repo JudyZZ/threejs-parallax-skill --path threejs-parallax
+codex install-skill --repo noname9xndz/threejs-parallax-skill --path threejs-parallax
 ```
 
 Or manually copy into `~/.codex/skills/`:
 
 ```bash
-git clone https://github.com/JudyZZ/threejs-parallax-skill.git /tmp/threejs-parallax-skill
+git clone https://github.com/noname9xndz/threejs-parallax-skill.git /tmp/threejs-parallax-skill
 cp -r /tmp/threejs-parallax-skill/threejs-parallax ~/.codex/skills/
 ```
 
@@ -60,6 +63,10 @@ To have a better result, please also attach a screenshot of the outcome you want
 The agent will guide the scene setup, layer configuration, and animation loop.
 
 Additional tip for adjusting positions of assets: Ask the agent to show the position info of assest, and then prompt for the change you want.
+
+## Credits
+
+Forked from [JudyZZ/threejs-parallax-skill](https://github.com/JudyZZ/threejs-parallax-skill), extended with touch support, performance/accessibility handling, cleanup, and a camera-follow mode for web games.
 
 ## License
 
